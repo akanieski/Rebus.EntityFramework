@@ -28,7 +28,7 @@ jobs:
       run: dotnet build --no-restore
 
     - name: Pack
-      run: dotnet pack --no-build --configuration Release --version-suffix '${{ github.sha }}'
+      run: dotnet pack --no-build --configuration Release --version-suffix $GITHUB_RUN_ID
       
     - name: Publish the package to nuget.org
       run: dotnet nuget push */bin/Release/*.nupkg -k $NUGET_AUTH_TOKEN -s https://api.nuget.org/v3/index.json
