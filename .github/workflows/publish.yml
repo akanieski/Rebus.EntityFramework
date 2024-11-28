@@ -21,18 +21,6 @@ jobs:
       with:
         dotnet-version: '9.x'
 
-    - name: Install GitVersion
-      uses: gittools/actions/gitversion/setup@v0.10.1
-      with:
-        versionSpec: '6.x'
-        preferLatestVersion: true
-
-    - name: Output the FullSemVer variable
-      id: versioning
-      uses: gittools/actions/gitversion/command@v3.0.3
-      with:
-        arguments: '/showvariable FullSemVer'
-
     - name: Restore dependencies
       run: dotnet restore
 
@@ -40,7 +28,8 @@ jobs:
       run: dotnet build --no-restore
 
     - name: Pack
-      run: dotnet pack --no-build --configuration Release /p:PackageVersion=${{ steps.versioning.outputs.fullSemVer }}
+      run: dotnet pack --no-build --configuration Release --version-suffix '${{ github.sha }}'
+      
     - name: Publish the package to nuget.org
       run: dotnet nuget push */bin/Release/*.nupkg -k $NUGET_AUTH_TOKEN -s https://api.nuget.org/v3/index.json
       env:
