@@ -5,7 +5,6 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <PackageId>Rebus.EntityFramework</PackageId>
-        <Version>1.0.0</Version>
         <Authors>akanieski</Authors>
         <Copyright>Copyright 2024 Andrew Kanieski</Copyright>
         <Product>Rebus.EntityFramework</Product>
@@ -19,6 +18,9 @@
         <PackageIcon>fm-logo2-200x200.png</PackageIcon>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <Title>Rebus Persistence with Entity Framework</Title>
+        <PackageProjectUrl>https://github.com/akanieski/Rebus.EntityFramework</PackageProjectUrl>
+        <PackageLicenseUrl>https://github.com/akanieski/Rebus.EntityFramework/blob/main/LICENSE.md</PackageLicenseUrl>
     </PropertyGroup>
 
     <ItemGroup>
