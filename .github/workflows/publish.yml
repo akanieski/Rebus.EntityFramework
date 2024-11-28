@@ -26,7 +26,7 @@ jobs:
 
     - name: Determine version
       id: gitversion
-      run: gitversion /output json /showvariable FullSemVer
+      run: echo "##[set-output name=FullSemVer;]$(gitversion /output json /showvariable FullSemVer)"
 
     - name: Restore dependencies
       run: dotnet restore
