@@ -1,6 +1,9 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Rebus.Logging;
 
 namespace Rebus.EntityFramework;
 
@@ -21,16 +24,42 @@ public record RebusStorageNamingConfiguration
     public string SagaIndexesToSagaIdIndexName { get; init; } = "SagaIndexesSagaIdIndex";
     public string SchemaName { get; init; } = "Rebus";
 }
-public partial class RebusDbContext(Action<DbContextOptionsBuilder> optionsBuilderSetup, RebusStorageNamingConfiguration? namingConfiguration = null) : DbContext
+public partial class RebusDbContext(ILog logger, Action<DbContextOptionsBuilder>? optionsBuilderSetup = null, RebusStorageNamingConfiguration? namingConfiguration = null) : DbContext
 {
     private RebusStorageNamingConfiguration? _namingConfiguration = namingConfiguration;
+
+    public RebusDbContext() : this(null, null)
+    {
+        _namingConfiguration ??= new RebusStorageNamingConfiguration();
+    }
     public virtual DbSet<Saga> Sagas { get; set; }
     public virtual DbSet<SagaIndex> SagaIndexes { get; set; }
     public virtual DbSet<SagaSnapshot> SagaSnapshots { get; set; }
+    
+    public bool Initialized { get; private set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        optionsBuilderSetup(optionsBuilder);
+        optionsBuilderSetup?.Invoke(optionsBuilder);
+    }
+
+    public virtual async Task Initialize()
+    {
+        await Database.EnsureCreatedAsync();
+
+        try
+        {
+            // Here we attempt to create tables if they don't exist. This scenario happens when the database is
+            // already existing with other tables, but may be missing the Rebus Storage tables. We are ignoring 
+            // exceptions here because the tables usually already exist.
+            await (this.GetService<IDatabaseCreator>() as RelationalDatabaseCreator)!.CreateTablesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.Debug($"Rebus tables were not created. This could be because they already exist. Exception: {ex.Message}");
+        }
+
+        Initialized = true;
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
