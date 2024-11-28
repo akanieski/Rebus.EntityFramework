@@ -28,7 +28,7 @@ public partial class RebusDbContext(ILog logger, Action<DbContextOptionsBuilder>
 {
     private RebusStorageNamingConfiguration? _namingConfiguration = namingConfiguration;
 
-    public RebusDbContext() : this(null, null)
+    public RebusDbContext() : this(null!, null)
     {
         _namingConfiguration ??= new RebusStorageNamingConfiguration();
     }
