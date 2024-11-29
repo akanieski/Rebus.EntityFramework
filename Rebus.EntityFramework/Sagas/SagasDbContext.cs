@@ -5,9 +5,9 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Rebus.Logging;
 
-namespace Rebus.EntityFramework;
+namespace Rebus.EntityFramework.Sagas;
 
-public record RebusStorageNamingConfiguration
+public record SagaStorageNamingConfiguration
 {
     public string SagasTableName { get; init; } = "Sagas";
     public string SagaIndexesTableName { get; init; } = "SagaIndexes";
@@ -23,18 +23,20 @@ public record RebusStorageNamingConfiguration
     public string PrimaryKeyName { get; init; } = "{0}PrimaryKey";
     public string SagaIndexesToSagaIdIndexName { get; init; } = "SagaIndexesSagaIdIndex";
     public string SchemaName { get; init; } = "Rebus";
+    
 }
-public partial class RebusDbContext(ILog logger, Action<DbContextOptionsBuilder>? optionsBuilderSetup = null, RebusStorageNamingConfiguration? namingConfiguration = null) : DbContext
+public partial class SagasDbContext(ILog logger, Action<DbContextOptionsBuilder>? optionsBuilderSetup = null, SagaStorageNamingConfiguration? namingConfiguration = null) : DbContext
 {
-    private RebusStorageNamingConfiguration? _namingConfiguration = namingConfiguration;
+    private SagaStorageNamingConfiguration? _namingConfiguration = namingConfiguration;
 
-    public RebusDbContext() : this(null!, null)
+    public SagasDbContext() : this(null!, null)
     {
-        _namingConfiguration ??= new RebusStorageNamingConfiguration();
+        _namingConfiguration ??= new SagaStorageNamingConfiguration();
     }
     public virtual DbSet<Saga> Sagas { get; set; }
     public virtual DbSet<SagaIndex> SagaIndexes { get; set; }
     public virtual DbSet<SagaSnapshot> SagaSnapshots { get; set; }
+    public virtual DbSet<TransportQueue> TransportQueues { get; set; }
     
     public bool Initialized { get; private set; }
 
@@ -64,7 +66,7 @@ public partial class RebusDbContext(ILog logger, Action<DbContextOptionsBuilder>
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        _namingConfiguration ??= new RebusStorageNamingConfiguration();
+        _namingConfiguration ??= new SagaStorageNamingConfiguration();
         
         modelBuilder.HasDefaultSchema(_namingConfiguration.SchemaName);
         
@@ -78,6 +80,7 @@ public partial class RebusDbContext(ILog logger, Action<DbContextOptionsBuilder>
             entity.Property(e => e.Data).HasColumnName(_namingConfiguration.DataColumnName);
             entity.Property(e => e.Revision).HasColumnName(_namingConfiguration.RevisionColumnName);
         });
+        
         modelBuilder.Entity<SagaSnapshot>(entity =>
         {
             entity.HasKey(e => new {e.Id, e.Revision}).HasName(string.Format(_namingConfiguration.PrimaryKeyName, _namingConfiguration.SagaSnapshotsTableName));
@@ -135,67 +138,3 @@ public partial class SagaIndex
     public Guid SagaId { get; set; }
 }
 
-public enum RebusStorageNamingConvention
-{
-    PascalCase,
-    SnakeCase
-}
-public static class NamingConventionHelper
-{
-    public static string ToConvention(this string input, RebusStorageNamingConvention namingConvention)
-    {
-        return namingConvention switch
-        {
-            RebusStorageNamingConvention.PascalCase => ToPascalCase(input),
-            RebusStorageNamingConvention.SnakeCase => ToSnakeCase(input),
-            _ => input
-        };
-    }
-    public static string ToPascalCase(string input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return input;
-        }
-
-        var words = input.Split(new[] { ' ', '_', '-' }, StringSplitOptions.RemoveEmptyEntries);
-        var result = new StringBuilder();
-
-        foreach (var word in words)
-        {
-            result.Append(CultureInfo.CurrentCulture.TextInfo.ToTitleCase(word.ToLower()));
-        }
-
-        return result.ToString();
-    }
-    public static string ToSnakeCase(string input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return input;
-        }
-
-        var result = new StringBuilder();
-        var isPreviousUpper = false;
-
-        foreach (var c in input)
-        {
-            if (char.IsUpper(c))
-            {
-                if (result.Length > 0 && !isPreviousUpper)
-                {
-                    result.Append('_');
-                }
-                result.Append(char.ToLower(c));
-                isPreviousUpper = true;
-            }
-            else
-            {
-                result.Append(c);
-                isPreviousUpper = false;
-            }
-        }
-
-        return result.ToString();
-    }
-}

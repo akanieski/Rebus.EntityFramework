@@ -1,20 +1,32 @@
+using System.Data;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Rebus.EntityFramework.Reflection;
 using Rebus.Exceptions;
 using Rebus.Sagas;
 
-namespace Rebus.EntityFramework;
+namespace Rebus.EntityFramework.Sagas;
 
-public class EntityFrameworkSagaStorage(RebusDbContext db) : ISagaStorage
+public class EntityFrameworkSagaStorage(SagasDbContextFactory dbContextFactory) : ISagaStorage
 {
     #region Private / Static Members ...
 
     private bool _isCreated = false;
     static readonly string IdPropertyName = Reflect.Path<ISagaData>(d => d.Id);
+    
+    /// <summary>
+    /// Get the Saga's CLR Type name. If it has a type version, remove it. Special thanks to @xhafan for spotting this.
+    /// https://github.com/rebus-org/Rebus.PostgreSql/pull/50/commits/9ae65ae5e34f21d11d8b7418f1f4f0e054883756
+    /// </summary>
+    /// <param name="sagaDataType"></param>
+    /// <returns></returns>
+    /// <exception cref="RebusApplicationException"></exception>
     string GetSagaTypeName(Type sagaDataType)
     {
-        return sagaDataType.FullName ?? throw new RebusApplicationException($"Saga data type {sagaDataType} does not have a fully qualified name. See https://learn.microsoft.com/en-us/dotnet/api/System.Type.FullName for more information");
+        return sagaDataType.FullName != null 
+            ? Regex.Replace(sagaDataType.FullName, @"Version=\d+\.\d+\.\d+\.\d+, ", "")
+            : throw new RebusApplicationException($"Saga data type {sagaDataType} does not have a fully qualified name. See https://learn.microsoft.com/en-us/dotnet/api/System.Type.FullName for more information");
     }
 
     static List<KeyValuePair<string, string>> GetPropertiesToIndex(ISagaData sagaData, IEnumerable<ISagaCorrelationProperty> correlationProperties)
@@ -51,6 +63,8 @@ public class EntityFrameworkSagaStorage(RebusDbContext db) : ISagaStorage
     
     public async Task<ISagaData> Find(Type sagaDataType, string propertyName, object propertyValue)
     {
+        await using var db = dbContextFactory.Create();
+
         if (!_isCreated)
         {
             await db.Database.EnsureCreatedAsync();
@@ -98,7 +112,8 @@ public class EntityFrameworkSagaStorage(RebusDbContext db) : ISagaStorage
 
     public async Task Insert(ISagaData sagaData, IEnumerable<ISagaCorrelationProperty> correlationProperties)
     {
-        db.ChangeTracker.Clear();
+        await using var db = dbContextFactory.Create();
+
         if (sagaData == null)
         {
             throw new InvalidOperationException($"Saga data is null!");
@@ -133,32 +148,24 @@ public class EntityFrameworkSagaStorage(RebusDbContext db) : ISagaStorage
 
     public async Task Update(ISagaData sagaData, IEnumerable<ISagaCorrelationProperty> correlationProperties)
     {
-        db.ChangeTracker.Clear();
+        await using var db = dbContextFactory.Create();
+
         var oldRevision = sagaData.Revision;
         sagaData.Revision += 1;
-        await using var transaction = await db.Database.BeginTransactionAsync();
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
         try
         {
-            var existingIndexes = await db.SagaIndexes.Where(si => si.SagaId == sagaData.Id).ToListAsync();
-            if (existingIndexes.Any())
-                db.SagaIndexes.RemoveRange(existingIndexes);
+            var existingRevision = await db.Sagas.Where(s => s.Id == sagaData.Id && s.Revision == oldRevision).SingleOrDefaultAsync();
             
-            await db.SaveChangesAsync();
-            
-            var existingSaga = await db.Sagas.SingleOrDefaultAsync(s => s.Id == sagaData.Id && s.Revision == oldRevision);
-            if (existingSaga != null)
-            {
-                // Here we remove the existing saga and its indexes, and then add the new version
-                // We do this because in EF you cannot increment the revision as it has to be part of a clustered key
-                db.Remove(existingSaga);
-                await db.SaveChangesAsync();
-            }
+            await db.SagaIndexes
+                .Where(si => si.SagaId == sagaData.Id).ExecuteDeleteAsync();
+            await db.Sagas.Where(s => s.Id == sagaData.Id && s.Revision == oldRevision).ExecuteDeleteAsync();
             
             var newVersionOfSaga = new Saga()
             {
                 Id = sagaData.Id,
                 Data = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(sagaData)),
-                Revision = sagaData.Revision
+                Revision = existingRevision == null ? sagaData.Revision + 1 : existingRevision.Revision + 1
             };
             await db.Sagas.AddAsync(newVersionOfSaga);
             
@@ -185,18 +192,15 @@ public class EntityFrameworkSagaStorage(RebusDbContext db) : ISagaStorage
 
     public async Task Delete(ISagaData sagaData)
     {
-        var existingSaga = await db.Sagas
-            .SingleOrDefaultAsync(s => s.Id == sagaData.Id && s.Revision == sagaData.Revision);
-        if (existingSaga != null)
-        {
-            db.Sagas.Remove(existingSaga);
-        }
+        await using var db = dbContextFactory.Create();
+
+        await db.Sagas.Where(s => s.Id == sagaData.Id && s.Revision == sagaData.Revision)
+            .ExecuteDeleteAsync();
         
-        var existingSagaIndexes = await db.SagaIndexes
-            .Where(s => s.SagaId == sagaData.Id).ToListAsync();
-        db.SagaIndexes.RemoveRange(existingSagaIndexes);
+        await db.SagaIndexes
+            .Where(s => s.SagaId == sagaData.Id)
+            .ExecuteDeleteAsync();
         
-        await db.SaveChangesAsync();
         sagaData.Revision++;
     }
 }

@@ -7,25 +7,44 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
+using Rebus.EntityFramework.Sagas;
+using Rebus.Injection;
 using Rebus.Logging;
 using Rebus.Sagas;
+using SagaModel = Rebus.EntityFramework.Sagas.Saga;
 
 namespace Rebus.EntityFramework.Tests
 {
     [TestClass]
     public class EntityFrameworkSagaStorageTests
     {
-        private RebusDbContext _dbContext;
+        private SagasDbContext _dbContext;
         private EntityFrameworkSagaStorage _sagaStorage;
         private Mock<ILog> _loggerMock;
+        private Mock<SagasDbContextFactory> _dbContextFactoryMock;
         [TestInitialize]
         public void Setup()
         {
             _loggerMock = new Mock<ILog>();
-            _dbContext = new RebusDbContext(_loggerMock.Object, o => o
+            _dbContext = new SagasDbContext(_loggerMock.Object, o => o
                 .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
                 .UseInMemoryDatabase(databaseName: "TestDatabase"));
-            _sagaStorage = new EntityFrameworkSagaStorage(_dbContext);
+            
+            
+            // Arrange
+            var resolutionContextMock = new Mock<IResolutionContext>();
+            var loggerFactoryMock = new Mock<IRebusLoggerFactory>();
+            var loggerMock = new Mock<ILog>();
+            resolutionContextMock.Setup(rc => rc.Get<IRebusLoggerFactory>()).Returns(loggerFactoryMock.Object);
+            loggerFactoryMock.Setup(lf => lf.GetLogger<SagasDbContext>()).Returns(loggerMock.Object);
+
+            var optionsBuilderSetup = new Action<DbContextOptionsBuilder>(options => options
+                .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+                .UseInMemoryDatabase("Test"));
+            var factory = new SagasDbContextFactory(resolutionContextMock.Object, optionsBuilderSetup);
+            
+            _dbContext = factory.Create();
+            _sagaStorage = new EntityFrameworkSagaStorage(factory);
         }
 
         [TestMethod]
@@ -36,7 +55,7 @@ namespace Rebus.EntityFramework.Tests
             var propertyName = "Id";
             var propertyValue = Guid.NewGuid();
             var sagaData = new TestSagaData { Id = propertyValue, Revision = 0 };
-            var saga = new Saga { Id = propertyValue, Data = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(sagaData)) };
+            var saga = new SagaModel { Id = propertyValue, Data = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(sagaData)) };
 
             _dbContext.Sagas.Add(saga);
             await _dbContext.SaveChangesAsync();
@@ -70,7 +89,7 @@ namespace Rebus.EntityFramework.Tests
             // Arrange
             var sagaData = new TestSagaData { Id = Guid.NewGuid(), Revision = 0 };
             var correlationProperties = new List<ISagaCorrelationProperty>();
-            var saga = new Saga { Id = sagaData.Id, Data = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(sagaData)) };
+            var saga = new SagaModel { Id = sagaData.Id, Data = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(sagaData)) };
 
             _dbContext.Sagas.Add(saga);
             await _dbContext.SaveChangesAsync();
@@ -88,7 +107,7 @@ namespace Rebus.EntityFramework.Tests
         {
             // Arrange
             var sagaData = new TestSagaData { Id = Guid.NewGuid(), Revision = 0 };
-            var saga = new Saga { Id = sagaData.Id, Data = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(sagaData)) };
+            var saga = new SagaModel { Id = sagaData.Id, Data = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(sagaData)) };
 
             _dbContext.Sagas.Add(saga);
             await _dbContext.SaveChangesAsync();

@@ -6,7 +6,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
+using Rebus.EntityFramework.Sagas;
 using Rebus.Exceptions;
+using Rebus.Injection;
 using Rebus.Logging;
 using Rebus.Sagas;
 
@@ -15,17 +17,26 @@ namespace Rebus.EntityFramework.Tests
     [TestClass]
     public class EntityFrameworkSagaSnapshotStorageTests
     {
-        private RebusDbContext _dbContext;
+        private SagasDbContext _dbContext;
         private EntityFrameworkSagaSnapshotStorage _snapshotStorage;
         private Mock<ILog> _loggerMock;
         [TestInitialize]
         public void Setup()
         {
             _loggerMock = new Mock<ILog>();
-            _dbContext = new RebusDbContext(_loggerMock.Object, o => o
-                .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
-                .UseInMemoryDatabase(databaseName: "TestDatabase"));
-            _snapshotStorage = new EntityFrameworkSagaSnapshotStorage(_dbContext);
+            
+            // Arrange
+            var resolutionContextMock = new Mock<IResolutionContext>();
+            var loggerFactoryMock = new Mock<IRebusLoggerFactory>();
+            var loggerMock = new Mock<ILog>();
+            resolutionContextMock.Setup(rc => rc.Get<IRebusLoggerFactory>()).Returns(loggerFactoryMock.Object);
+            loggerFactoryMock.Setup(lf => lf.GetLogger<SagasDbContext>()).Returns(loggerMock.Object);
+
+            var optionsBuilderSetup = new Action<DbContextOptionsBuilder>(options => options.UseInMemoryDatabase("Test"));
+            var factory = new SagasDbContextFactory(resolutionContextMock.Object, optionsBuilderSetup);
+
+            _dbContext = factory.Create();
+            _snapshotStorage = new EntityFrameworkSagaSnapshotStorage(factory);
         }
 
         [TestMethod]
