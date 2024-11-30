@@ -4,10 +4,12 @@
 
 Provides an EntityFramework persistence for [Rebus](https://github.com/rebus-org/Rebus) for
 
-- [x] sagas 
-- [ ] subscriptions _Incomplete_
-- [ ] timeouts _Incomplete_
-- [ ] transport _Incomplete_
+- [x] Sagas
+- [x] Sagas with Exclusive Locks
+- [x] Subscriptions 
+- [x] Timeouts
+- [x] Transport
+- [ ] Outbox _Incomplete, potentially incompatible_
 
 **Note**:  This library is experimental and only supports the above indicated features. 
 
